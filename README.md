@@ -27,7 +27,7 @@ Design system: **Verretta** (Glossy Coral on Dark Taupe + Inter + Cormorant Gara
 
 ### Run web mode locally
 ```bash
-cd web
+cd docs
 python3 -m http.server 8765
 open http://localhost:8765
 ```
@@ -74,7 +74,7 @@ Web mode tracks per-category rows. Deep mode aggregates by date.
 
 ```
 focus-forecast/
-├── web/                    pure-static deploy → GitHub Pages
+├── docs/                    pure-static deploy → GitHub Pages
 │   ├── index.html         brand: Verretta. mobile-first. PWA wired.
 │   ├── style.css          design tokens
 │   ├── app.js             timer + forecast + storage + categories
