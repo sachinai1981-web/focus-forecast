@@ -4,8 +4,15 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>Focus, measured with meaning — Focus Forecast</title>
-<meta name="description" content="A focus tracker with a real Pomodoro clock. Log your minutes, see tomorrow's forecast, beat the line." />
-<meta name="theme-color" content="#332B24" />
+<meta name="description" content="A Pomodoro tracker that forecasts how much you'll focus tomorrow — then dares you to beat the line." />
+
+<!-- Theme color: dynamic by JS; static fallback per scheme -->
+<meta name="theme-color" id="metaThemeColor" content="#332B24" />
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#E1DBD6" />
+<meta name="theme-color" media="(prefers-color-scheme: dark)"  content="#332B24" />
+<meta name="color-scheme" content="light dark" />
+
+<!-- PWA -->
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -13,6 +20,30 @@
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="icon" type="image/png" href="icon-192.png" />
 <link rel="apple-touch-icon" href="icon-192.png" />
+
+<!-- iOS splash images (Apple's pattern: device-specific via media queries). -->
+<link rel="apple-touch-startup-image" href="splash-1290.png"
+      media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)" />
+<link rel="apple-touch-startup-image" href="splash-1290.png"
+      media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)" />
+<link rel="apple-touch-startup-image" href="splash-750.png"
+      media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)" />
+<link rel="apple-touch-startup-image" href="splash-750.png"
+      media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)" />
+
+<!-- Open Graph + Twitter Card -->
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://sachinai1981-web.github.io/focus-forecast/" />
+<meta property="og:title" content="Focus, measured with meaning" />
+<meta property="og:description" content="A Pomodoro tracker that forecasts how much you'll focus tomorrow — then dares you to beat the line." />
+<meta property="og:image" content="https://sachinai1981-web.github.io/focus-forecast/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Focus Forecast" />
+<meta name="twitter:description" content="A Pomodoro tracker that forecasts how much you'll focus tomorrow." />
+<meta name="twitter:image" content="https://sachinai1981-web.github.io/focus-forecast/og-image.png" />
+
 <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
@@ -20,6 +51,22 @@
 </head>
 <body>
 <div class="stripes" aria-hidden="true"></div>
+
+<!-- Sticky live header — shows only when the focus timer is running -->
+<div class="live-header" id="liveHeader" aria-hidden="true">
+  <div class="lh-inner">
+    <svg class="lh-ring" viewBox="0 0 40 40" aria-hidden="true">
+      <circle cx="20" cy="20" r="18" fill="none" stroke="rgba(225,219,214,0.25)" stroke-width="3"/>
+      <circle id="lhArc" cx="20" cy="20" r="18" fill="none" stroke="#FF805D" stroke-width="3"
+              stroke-linecap="round" stroke-dasharray="113.1" stroke-dashoffset="0" transform="rotate(-90 20 20)" />
+    </svg>
+    <div class="lh-text">
+      <span class="lh-time" id="lhTime">00:00</span>
+      <span class="lh-meta"><b id="lhPhase">Focus</b> · <span id="lhCat">Deep work</span></span>
+    </div>
+    <button class="lh-pause" id="lhPause" type="button" aria-label="Pause">Pause</button>
+  </div>
+</div>
 
 <main class="wrap">
   <header class="masthead">
@@ -81,6 +128,7 @@
         <div class="settings-row">
           <label>focus<input id="tFocusMin" type="number" min="1" max="120" value="25" /></label>
           <label>break<input id="tBreakMin" type="number" min="1" max="60" value="5" /></label>
+          <label class="long-toggle"><input id="tLongBreaks" type="checkbox" checked /> long break every 4</label>
         </div>
       </div>
     </div>
@@ -89,24 +137,48 @@
   <section class="kpi-grid">
     <p class="eyebrow span-all">② Tomorrow, forecast</p>
     <div class="card kpi"><div class="label">Today · forecast</div><div class="value" id="kpiToday">—<span class="unit">min</span></div><div class="foot" id="kpiTodayDate">—</div></div>
-    <div class="card kpi"><div class="label">7-day total · forecast</div><div class="value" id="kpiTotal">—<span class="unit">min</span></div><div class="foot">~<span id="kpiTotalHours">—</span> hours</div></div>
+    <div class="card kpi"><div class="label">7-day total · forecast</div><div class="value" id="kpiTotal">—<span class="unit">min</span></div><div class="foot">~<span id="kpiTotalHours">—</span> hours · <em>tomorrow's line</em></div></div>
     <div class="card kpi"><div class="label">Trailing 7-day actual</div><div class="value" id="kpiPrior">—<span class="unit">min</span></div><div class="foot" id="kpiPriorDelta">—</div></div>
   </section>
 
+  <section class="streak-grid">
+    <p class="eyebrow span-all">③ The chain</p>
+    <div class="card streak-card" id="streakCard">
+      <div class="label">Streak · days beating forecast</div>
+      <div class="streak-value"><span id="streakNum">0</span><span class="unit">days</span></div>
+      <div class="foot" id="streakFoot">log a session to start</div>
+    </div>
+    <div class="card pb-card">
+      <div class="label">Personal best</div>
+      <div class="pb-row"><span>Single block</span><b><span id="pbBlock">—</span> <small>min</small></b></div>
+      <div class="pb-row"><span>Best day</span><b><span id="pbDay">—</span> <small>min</small></b></div>
+      <div class="foot" id="pbFoot">no records yet</div>
+    </div>
+    <div class="card goal-card">
+      <div class="label">Daily goal</div>
+      <div class="goal-row">
+        <input id="goalMin" type="number" min="0" max="720" step="5" class="input goal-input" />
+        <span class="muted">min/day</span>
+      </div>
+      <div class="goal-bar"><span id="goalBar" style="width:0%"></span></div>
+      <div class="foot" id="goalFoot">set a target</div>
+    </div>
+  </section>
+
   <section class="card chart-card">
-    <p class="eyebrow inset">③ The line to clear</p>
+    <p class="eyebrow inset">④ The line to clear</p>
     <div id="chartBox"><canvas id="chart"></canvas></div>
   </section>
 
   <section class="card categories-card">
-    <p class="eyebrow inset">④ Where the focus went</p>
+    <p class="eyebrow inset">⑤ Where the focus went</p>
     <div id="catBreakdown" class="cat-grid"></div>
   </section>
 
   <section class="card log-card">
     <div class="log-grid">
       <div>
-        <p class="eyebrow inset">⑤ Backfill</p>
+        <p class="eyebrow inset">⑥ Backfill</p>
         <h3>Log a missed day</h3>
         <p class="muted">Forgot to use the timer? Type the total minutes and the day. Overwrites that date's value.</p>
       </div>
@@ -127,12 +199,13 @@
   <section class="card data-card">
     <div class="data-grid">
       <div>
-        <p class="eyebrow inset">⑥ Your data</p>
+        <p class="eyebrow inset">⑦ Your data</p>
         <p class="muted">Everything is in your browser. Export when you want a backup or to feed the deep-mode TimesFM forecast on your laptop.</p>
       </div>
       <div class="btn-row">
         <button class="btn" id="exportBtn" type="button">Export CSV</button>
         <label class="btn" for="importInput">Import CSV<input id="importInput" type="file" accept=".csv" hidden /></label>
+        <button class="btn" id="pushBtn" type="button" hidden>Enable push</button>
         <button class="btn ghost" id="clearBtn" type="button">Clear all</button>
       </div>
     </div>
@@ -143,6 +216,32 @@
     <div>Brand system: <em>Verretta</em> · model: <code>google/timesfm-2.5-200m-pytorch</code> (deep mode, local)</div>
   </footer>
 </main>
+
+<!-- Onboarding overlay — first launch only -->
+<div class="onboarding" id="onboarding" aria-hidden="true">
+  <div class="ob-card" role="dialog" aria-labelledby="obTitle">
+    <div class="ob-step" data-step="1">
+      <p class="eyebrow">① Pick your category</p>
+      <h2 id="obTitle">Tag what you're <em>focused on</em>.</h2>
+      <p>Deep work, coding, reading, writing, meetings — six buckets. Each Pomodoro logs to the one you pick.</p>
+    </div>
+    <div class="ob-step" data-step="2" hidden>
+      <p class="eyebrow">② Hit start</p>
+      <h2>The timer is the <em>real clock</em>.</h2>
+      <p>25 minutes by default. Configurable. The countdown counts in wall-clock time, so it stays honest if you switch tabs or your phone screens off.</p>
+    </div>
+    <div class="ob-step" data-step="3" hidden>
+      <p class="eyebrow">③ Beat tomorrow's line</p>
+      <h2>Today's forecast is your <em>baseline</em>.</h2>
+      <p>Once we have a few weeks of your data, the model picks up your weekly rhythm and forecasts how much you'll focus tomorrow. Your job: clear the line.</p>
+    </div>
+    <div class="ob-dots"><span class="dot active"></span><span class="dot"></span><span class="dot"></span></div>
+    <div class="ob-actions">
+      <button class="btn ghost" id="obSkip" type="button">Skip</button>
+      <button class="btn primary" id="obNext" type="button">Next</button>
+    </div>
+  </div>
+</div>
 
 <script src="app.js" defer></script>
 <script>

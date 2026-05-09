@@ -1,6 +1,10 @@
 /* Focus Forecast — pure-static app. State in localStorage. Baseline forecast in JS. */
 const HIST_KEY = 'focus.history.v1';
 const TIMER_KEY = 'focus.timer.v1';
+const ONBOARDED_KEY = 'focus.onboarded.v1';
+const GOAL_KEY = 'focus.goal.v1';
+const PUSH_SUB_KEY = 'focus.push.sub.v1';
+const PUSH_WORKER_URL = ''; // set this to your deployed Cloudflare Worker URL to enable push
 const CATEGORIES = [
   { id: 'deep',     name: 'Deep work', color: '#FF805D' },
   { id: 'coding',   name: 'Coding',    color: '#332B24' },
@@ -12,13 +16,14 @@ const CATEGORIES = [
 const CAT_BY_ID = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
 const HISTORY_TARGET = 14;
 const HORIZON = 7;
+const STREAK_FOIL_THRESHOLD = 7;
 
 const $ = id => document.getElementById(id);
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 const round = n => Math.round(n);
 const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
-const dayOfWeek = iso => new Date(iso + 'T00:00:00').getDay(); // 0=Sun
+const dayOfWeek = iso => new Date(iso + 'T00:00:00').getDay();
 const isFiniteNum = n => Number.isFinite(n);
 
 /* ── Storage ────────────────────────────────── */
@@ -27,7 +32,6 @@ function loadHistory() {
   catch { return []; }
 }
 function saveHistory(rows) { localStorage.setItem(HIST_KEY, JSON.stringify(rows)); }
-
 function addMinutes(date, minutes, category) {
   const rows = loadHistory();
   rows.push({ date, minutes: round(minutes * 100) / 100, category: category || 'deep' });
@@ -38,7 +42,11 @@ function setMinutes(date, minutes, category) {
   rows.push({ date, minutes: round(minutes * 100) / 100, category: category || 'deep' });
   saveHistory(rows);
 }
-function clearAll() { localStorage.removeItem(HIST_KEY); localStorage.removeItem(TIMER_KEY); }
+function clearAll() {
+  [HIST_KEY, TIMER_KEY, ONBOARDED_KEY, GOAL_KEY, PUSH_SUB_KEY].forEach(k => localStorage.removeItem(k));
+}
+function getGoal() { return parseInt(localStorage.getItem(GOAL_KEY) || '240', 10); }
+function setGoal(v) { localStorage.setItem(GOAL_KEY, String(v)); }
 
 /* ── Aggregations ────────────────────────────────── */
 function aggregateByDate(rows) {
@@ -53,23 +61,17 @@ function aggregateByCategory(rows, fromIso) {
 }
 function todayTotal(rows) { return rows.filter(r => r.date === todayISO()).reduce((s, r) => s + r.minutes, 0); }
 
-/* ── Baseline forecast ──────────────────────────────
-   Per-day p50 = mean of same weekday across last 4 weeks (or all available if fewer).
-   p10/p90 = ±max(15, stddev) on top.
-   When fewer than 7 days exist, use the global mean. Empty history = zeros.
-*/
+/* ── Forecast (weekday-mean baseline) ──────────────────────────── */
 function baselineForecast(daily, horizon = HORIZON) {
   const last = daily.length ? daily[daily.length - 1].date : todayISO();
   const dates = Array.from({ length: horizon }, (_, i) => addDays(last, i + 1));
   if (daily.length === 0) {
-    return { mode: 'baseline', dates, p10: dates.map(_ => 0), p50: dates.map(_ => 0), p90: dates.map(_ => 0) };
+    return { mode: 'baseline', dates, p10: dates.map(_=>0), p50: dates.map(_=>0), p90: dates.map(_=>0) };
   }
   const minutes = daily.map(d => d.minutes);
   const globalMean = minutes.reduce((a,b)=>a+b,0) / minutes.length;
-  const stddev = Math.sqrt(minutes.reduce((s,m)=> s + (m - globalMean)**2, 0) / minutes.length) || 15;
+  const stddev = Math.sqrt(minutes.reduce((s,m)=> s + (m-globalMean)**2, 0) / minutes.length) || 15;
   const pad = Math.max(15, stddev);
-
-  // weekday lookup of last 28 days
   const recent = daily.slice(-28);
   const byDow = new Map();
   for (const r of recent) {
@@ -86,6 +88,51 @@ function baselineForecast(daily, horizon = HORIZON) {
   const p10 = p50.map(v => Math.max(0, v - pad));
   const p90 = p50.map(v => v + pad);
   return { mode: 'baseline', dates, p10, p50, p90 };
+}
+
+/* ── Streak / Personal best ──────────────────────────── */
+function expectedForDate(daily, dateIso) {
+  // Same logic as baseline but for an arbitrary historical date — use the prior 28-day window of THAT date.
+  const priorWindow = daily.filter(r => r.date < dateIso).slice(-28);
+  if (priorWindow.length === 0) return null;
+  const sameDow = priorWindow.filter(r => dayOfWeek(r.date) === dayOfWeek(dateIso));
+  if (sameDow.length >= 1) return sameDow.reduce((s,r)=>s+r.minutes,0) / sameDow.length;
+  return priorWindow.reduce((s,r)=>s+r.minutes,0) / priorWindow.length;
+}
+
+function computeStreak(daily) {
+  // Walk backwards from yesterday. Count consecutive days where actual >= expected.
+  // Today counts only if it already meets the bar (otherwise we don't punish a day in progress).
+  let streak = 0;
+  const dates = daily.map(r => r.date);
+  // Build a quick map
+  const map = new Map(daily.map(r => [r.date, r.minutes]));
+  let cursor = todayISO();
+  // Skip today if not yet meeting expected — keep yesterday's streak alive
+  const todayActual = map.get(cursor) || 0;
+  const todayExp = expectedForDate(daily, cursor);
+  if (todayExp !== null && todayActual >= todayExp) { streak += 1; }
+  cursor = addDays(cursor, -1);
+
+  for (let i = 0; i < 366; i++) {
+    if (!map.has(cursor)) break;
+    const exp = expectedForDate(daily, cursor);
+    if (exp === null) break;
+    if (map.get(cursor) >= exp) streak += 1;
+    else break;
+    cursor = addDays(cursor, -1);
+  }
+  return streak;
+}
+
+function computePersonalBest(rows, daily) {
+  if (!rows.length) return { bestBlock: null, bestDay: null };
+  const bestBlockRow = rows.slice().sort((a,b) => b.minutes - a.minutes)[0];
+  const bestDayRow = daily.slice().sort((a,b) => b.minutes - a.minutes)[0];
+  return {
+    bestBlock: bestBlockRow ? { minutes: bestBlockRow.minutes, date: bestBlockRow.date, category: bestBlockRow.category } : null,
+    bestDay: bestDayRow ? { minutes: bestDayRow.minutes, date: bestDayRow.date } : null,
+  };
 }
 
 /* ── Render ────────────────────────────────── */
@@ -110,6 +157,48 @@ function paintKPIs(daily, fc) {
     $('kpiPrior').firstChild.textContent = round(last7);
     const delta = total - last7;
     $('kpiPriorDelta').innerHTML = 'vs 7-day forecast: <b style="color:' + (delta>=0?'#2D8F4E':'#B73E2A') + '">' + (delta>=0?'+':'') + round(delta) + ' min</b>';
+  }
+}
+function paintStreakAndPB(rows, daily) {
+  const streak = computeStreak(daily);
+  const sNum = $('streakNum');
+  const sCard = $('streakCard');
+  const sFoot = $('streakFoot');
+  sNum.textContent = streak;
+  if (streak >= STREAK_FOIL_THRESHOLD) {
+    sCard.classList.add('foil');
+    sFoot.textContent = `${streak} days unbroken — copper-foil tier`;
+  } else {
+    sCard.classList.remove('foil');
+    if (daily.length === 0) sFoot.textContent = 'log a session to start';
+    else if (streak === 0) sFoot.textContent = 'start a new chain today';
+    else sFoot.textContent = `${streak} day${streak===1?'':'s'} and counting — beat today's line to extend`;
+  }
+  const pb = computePersonalBest(rows, daily);
+  if (pb.bestBlock) {
+    $('pbBlock').textContent = round(pb.bestBlock.minutes);
+    $('pbDay').textContent = pb.bestDay ? round(pb.bestDay.minutes) : '—';
+    const cat = CAT_BY_ID[pb.bestBlock.category]?.name || 'session';
+    $('pbFoot').textContent = `${cat} · ${fmtDate(pb.bestBlock.date)}`;
+  } else {
+    $('pbBlock').textContent = '—';
+    $('pbDay').textContent = '—';
+    $('pbFoot').textContent = 'no records yet';
+  }
+}
+function paintGoal(rows) {
+  const goal = getGoal();
+  $('goalMin').value = goal;
+  const today = todayTotal(rows);
+  const pct = goal > 0 ? Math.min(100, (today / goal) * 100) : 0;
+  $('goalBar').style.width = pct + '%';
+  const bar = $('goalBar').parentElement;
+  if (today >= goal && goal > 0) {
+    bar.classList.add('met');
+    $('goalFoot').innerHTML = `<b>met</b> · ${round(today)} of ${goal} min today`;
+  } else {
+    bar.classList.remove('met');
+    $('goalFoot').textContent = goal > 0 ? `${round(today)} of ${goal} min · ${round(goal-today)} to go` : 'set a target';
   }
 }
 function paintCategories(rows) {
@@ -148,6 +237,7 @@ function paintChart(daily, fc) {
   const coral = cs.getPropertyValue('--coral').trim();
   const warmGrey = cs.getPropertyValue('--warm-grey').trim();
   const ruleC = '#5C4F45';
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (chart) chart.destroy();
   chart = new Chart($('chart'), {
     type: 'line',
@@ -160,6 +250,7 @@ function paintChart(daily, fc) {
     ]},
     options: {
       responsive: true, maintainAspectRatio: false,
+      animation: reduceMotion ? false : { duration: 600 },
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { labels: { filter: i => i.text !== 'p10', color: warmGrey, font: { family: 'Inter', size: 12 }, boxWidth: 14 }, position: 'top', align: 'end' },
@@ -179,19 +270,27 @@ function refreshAll() {
   const fc = baselineForecast(daily);
   paintMode(daily);
   paintKPIs(daily, fc);
+  paintStreakAndPB(rows, daily);
+  paintGoal(rows);
   paintCategories(rows);
   paintChart(daily, fc);
   $('tToday').textContent = `${round(todayTotal(rows))} min`;
 }
 
+/* ── Theme color (status bar) ────────────────────────── */
+function setThemeColor(c) { const el = $('metaThemeColor'); if (el) el.setAttribute('content', c); }
+
 /* ── Timer state machine ────────────────────────────────── */
 const T = (() => {
   const ARC_LEN = 2 * Math.PI * 92;
+  const LH_ARC_LEN = 2 * Math.PI * 18;
   let state = {
     phase: 'focus', status: 'idle', session: 1,
-    focusMs: 25*60*1000, breakMs: 5*60*1000,
+    focusMs: 25*60*1000, breakMs: 5*60*1000, longBreakMs: 15*60*1000,
     total: 25*60*1000, remaining: 25*60*1000, lastTick: 0,
     category: 'deep',
+    completedFocus: 0,
+    longBreaksOn: true,
   };
   let wakeLock = null;
 
@@ -202,7 +301,7 @@ const T = (() => {
       const now = Date.now();
       state.remaining = Math.max(0, state.remaining - (now - state.lastTick));
       state.lastTick = now;
-      if (state.remaining === 0) state.status = 'paused'; // never auto-complete on restore
+      if (state.remaining === 0) state.status = 'paused';
     }
   }
   const fmtTime = ms => {
@@ -210,20 +309,49 @@ const T = (() => {
     return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   };
 
+  function nextBreakMs() {
+    return (state.longBreaksOn && state.completedFocus > 0 && state.completedFocus % 4 === 0)
+      ? state.longBreakMs : state.breakMs;
+  }
+
   function paint() {
     $('tTime').textContent = fmtTime(state.remaining);
-    $('tPhase').textContent = state.phase === 'focus' ? 'Focus' : 'Break';
+    $('tPhase').textContent = state.phase === 'focus' ? 'Focus' : (state.total === state.longBreakMs ? 'Long break' : 'Break');
     $('tPhase').className = 'phase ' + state.phase;
     $('tRing').classList.toggle('break', state.phase === 'break');
     $('tSession').textContent = state.phase === 'focus'
       ? `Session ${state.session} · ${state.status === 'running' ? 'in progress' : state.status === 'paused' ? 'paused' : 'ready when you are'}`
-      : `Break · session ${state.session} done`;
+      : `Break · session ${state.completedFocus} done${state.total === state.longBreakMs ? ' · long break' : ''}`;
     $('tSub').textContent = state.status === 'running' ? 'running' : state.status === 'paused' ? 'paused' : 'tap start';
     $('tStart').textContent = state.status === 'running' ? 'Pause' : (state.status === 'paused' ? 'Resume' : 'Start');
     const pct = state.total > 0 ? state.remaining / state.total : 0;
     $('tArc').setAttribute('stroke-dasharray', ARC_LEN);
     $('tArc').setAttribute('stroke-dashoffset', ARC_LEN * (1 - pct));
     $('tCategory').value = state.category;
+    if ($('tLongBreaks')) $('tLongBreaks').checked = state.longBreaksOn;
+
+    // Live header
+    const lh = $('liveHeader');
+    if (state.status === 'running') {
+      lh.classList.add('show');
+      lh.setAttribute('aria-hidden', 'false');
+      $('lhTime').textContent = fmtTime(state.remaining);
+      $('lhPhase').textContent = state.phase === 'focus' ? 'Focus' : (state.total === state.longBreakMs ? 'Long break' : 'Break');
+      $('lhCat').textContent = CAT_BY_ID[state.category]?.name || 'Focus';
+      $('lhArc').setAttribute('stroke-dashoffset', LH_ARC_LEN * (1 - pct));
+      $('lhArc').setAttribute('stroke', state.phase === 'focus' ? '#FF805D' : '#7BC4A0');
+    } else {
+      lh.classList.remove('show');
+      lh.setAttribute('aria-hidden', 'true');
+    }
+
+    // Theme color follows phase
+    if (state.status === 'running') {
+      setThemeColor(state.phase === 'focus' ? '#FF805D' : '#7BC4A0');
+    } else {
+      setThemeColor('#332B24');
+    }
+
     document.title = state.status === 'running'
       ? `${fmtTime(state.remaining)} · ${state.phase} · Focus Forecast`
       : 'Focus, measured with meaning — Focus Forecast';
@@ -241,6 +369,8 @@ const T = (() => {
       o.start(); o.stop(ctx.currentTime + 0.6);
     } catch {}
   }
+
+  function vibrate(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch {} }
 
   async function acquireWakeLock() {
     if (!('wakeLock' in navigator)) return;
@@ -269,10 +399,14 @@ const T = (() => {
     state.status = 'idle';
     if (state.phase === 'focus') {
       logSession(state.focusMs / 60000);
+      state.completedFocus += 1;
       notify('Focus block done', `${state.focusMs/60000} min logged · ${CAT_BY_ID[state.category]?.name || 'Focus'}`);
-      state.phase = 'break'; state.total = state.breakMs; state.remaining = state.breakMs;
+      vibrate([180, 80, 180]);
+      const breakDur = nextBreakMs();
+      state.phase = 'break'; state.total = breakDur; state.remaining = breakDur;
     } else {
       notify('Break over', 'Ready for the next focus block.');
+      vibrate([120]);
       state.phase = 'focus'; state.session += 1; state.total = state.focusMs; state.remaining = state.focusMs;
     }
     releaseWakeLock();
@@ -307,11 +441,13 @@ const T = (() => {
     if (state.phase === 'focus' && state.status !== 'idle') {
       const elapsedMs = state.total - state.remaining;
       logSession(elapsedMs / 60000);
+      state.completedFocus += 1;
     }
     state.status = 'idle';
     releaseWakeLock();
     if (state.phase === 'focus') {
-      state.phase = 'break'; state.total = state.breakMs; state.remaining = state.breakMs;
+      const breakDur = nextBreakMs();
+      state.phase = 'break'; state.total = breakDur; state.remaining = breakDur;
     } else {
       state.phase = 'focus'; state.session += 1; state.total = state.focusMs; state.remaining = state.focusMs;
     }
@@ -320,7 +456,7 @@ const T = (() => {
   function reset() {
     state.status = 'idle';
     releaseWakeLock();
-    state.total = state.phase === 'focus' ? state.focusMs : state.breakMs;
+    state.total = state.phase === 'focus' ? state.focusMs : nextBreakMs();
     state.remaining = state.total;
     save(); paint();
   }
@@ -328,8 +464,9 @@ const T = (() => {
     const f = Math.max(1, Math.min(120, parseInt($('tFocusMin').value, 10) || 25)) * 60000;
     const b = Math.max(1, Math.min(60,  parseInt($('tBreakMin').value, 10) || 5))  * 60000;
     state.focusMs = f; state.breakMs = b;
+    state.longBreaksOn = $('tLongBreaks') ? $('tLongBreaks').checked : true;
     if (state.status === 'idle') {
-      state.total = state.phase === 'focus' ? f : b;
+      state.total = state.phase === 'focus' ? f : nextBreakMs();
       state.remaining = state.total;
     }
     save(); paint();
@@ -342,12 +479,11 @@ const T = (() => {
     $('tReset').addEventListener('click', reset);
     $('tFocusMin').addEventListener('change', applySettings);
     $('tBreakMin').addEventListener('change', applySettings);
+    $('tLongBreaks').addEventListener('change', applySettings);
     $('tCategory').addEventListener('change', e => setCategory(e.target.value));
+    if ($('lhPause')) $('lhPause').addEventListener('click', start);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && state.status === 'running') {
-        // re-acquire wake lock if browser dropped it
-        acquireWakeLock();
-      }
+      if (document.visibilityState === 'visible' && state.status === 'running') acquireWakeLock();
     });
   }
 
@@ -385,13 +521,71 @@ function bindLog() {
     refreshAll();
   });
   $('clearBtn').addEventListener('click', () => {
-    if (confirm('Clear all logged history? This cannot be undone.')) { clearAll(); refreshAll(); location.reload(); }
+    if (confirm('Clear all logged history? This cannot be undone.')) { clearAll(); location.reload(); }
   });
+  $('goalMin').addEventListener('change', () => {
+    const v = Math.max(0, Math.min(720, parseInt($('goalMin').value, 10) || 0));
+    setGoal(v); refreshAll();
+  });
+}
+
+/* ── Onboarding ────────────────────────────────── */
+function maybeRunOnboarding() {
+  if (localStorage.getItem(ONBOARDED_KEY) === '1') return;
+  const ob = $('onboarding');
+  ob.classList.add('show');
+  ob.setAttribute('aria-hidden', 'false');
+  let step = 1;
+  const dots = document.querySelectorAll('.ob-dots .dot');
+  function show(s) {
+    document.querySelectorAll('.ob-step').forEach(el => { el.hidden = parseInt(el.dataset.step,10) !== s; });
+    dots.forEach((d,i) => d.classList.toggle('active', i === s-1));
+    $('obNext').textContent = s === 3 ? 'Start focusing' : 'Next';
+  }
+  function done() {
+    localStorage.setItem(ONBOARDED_KEY, '1');
+    ob.classList.remove('show');
+    ob.setAttribute('aria-hidden', 'true');
+  }
+  $('obSkip').addEventListener('click', done);
+  $('obNext').addEventListener('click', () => {
+    if (step >= 3) done();
+    else { step += 1; show(step); }
+  });
+  show(1);
+}
+
+/* ── Push subscription (graceful — no-op if PUSH_WORKER_URL is empty) ────────────── */
+async function bindPush() {
+  if (!PUSH_WORKER_URL || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  $('pushBtn').hidden = false;
+  $('pushBtn').addEventListener('click', async () => {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        const keyRes = await fetch(`${PUSH_WORKER_URL}/vapid-public-key`);
+        const { key } = await keyRes.json();
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
+      }
+      await fetch(`${PUSH_WORKER_URL}/subscribe`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(sub) });
+      localStorage.setItem(PUSH_SUB_KEY, '1');
+      $('pushBtn').textContent = 'Push enabled';
+      $('pushBtn').disabled = true;
+    } catch (e) { console.warn('push subscribe failed', e); }
+  });
+}
+function urlBase64ToUint8Array(base64) {
+  const padding = '='.repeat((4 - base64.length % 4) % 4);
+  const b = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
 }
 
 /* ── Boot ────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
-  // wait for Chart.js (loaded with defer)
-  const boot = () => { refreshAll(); T.init(); bindLog(); };
+  const boot = () => { refreshAll(); T.init(); bindLog(); bindPush(); maybeRunOnboarding(); };
   if (window.Chart) boot(); else window.addEventListener('load', boot);
 });

@@ -1,0 +1,20 @@
+name = "focus-forecast-push"
+main = "src/worker.js"
+compatibility_date = "2025-01-01"
+
+# KV namespace for push subscriptions and pending notifications.
+# After running `wrangler kv:namespace create SUBS`, replace the id below.
+[[kv_namespaces]]
+binding = "SUBS"
+id = "REPLACE_WITH_KV_ID"
+
+# Cron trigger: fires every minute to scan and dispatch pending notifications.
+[triggers]
+crons = ["* * * * *"]
+
+# VAPID keys — do NOT store here. Set via:
+#   wrangler secret put VAPID_PUBLIC_KEY
+#   wrangler secret put VAPID_PRIVATE_KEY
+# The [vars] block below is for non-secret placeholders only.
+[vars]
+CORS_ORIGIN = "https://sachinai1981-web.github.io"
