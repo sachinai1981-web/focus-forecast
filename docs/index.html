@@ -246,7 +246,28 @@
 <script src="app.js" defer></script>
 <script>
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('service-worker.js').catch(() => {}));
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js').then(reg => {
+        reg.addEventListener('updatefound', () => {
+          const w = reg.installing;
+          if (w) w.addEventListener('statechange', () => {
+            if (w.state === 'installed' && navigator.serviceWorker.controller) {
+              // New shell ready. Reload silently next time tab becomes hidden→visible.
+              document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') location.reload();
+              }, { once: true });
+            }
+          });
+        });
+      }).catch(() => {});
+      navigator.serviceWorker.addEventListener('message', e => {
+        if (e.data && e.data.type === 'shell-updated') {
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') location.reload();
+          }, { once: true });
+        }
+      });
+    });
   }
 </script>
 </body>
