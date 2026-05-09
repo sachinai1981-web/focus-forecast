@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# User data (do not commit personal focus history)
+focus.csv
+
+# Generated artifacts (regenerated on each forecast run)
+forecast.json
+forecast.png
+
+# Logs
+/tmp/focus_app.log
+*.log
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/

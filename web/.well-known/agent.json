@@ -1,0 +1,27 @@
+{
+  "name": "Focus Forecast",
+  "description": "Pomodoro tracker with weekday-mean baseline forecasting and per-category breakdown. Pure-static PWA, installable to phone, no signup, browser-local storage.",
+  "url": "https://sachinai1981-web.github.io/focus-forecast",
+  "contact": {
+    "email": "sachinai1981@gmail.com",
+    "type": "human"
+  },
+  "owner": {
+    "name": "Sachin Rai",
+    "role": "Enterprise Sales Professional",
+    "company": "Freshworks",
+    "linkedin": "https://linkedin.com/in/sachinrai"
+  },
+  "capabilities": [
+    "pomodoro-timer",
+    "focus-session-logging",
+    "category-tracking",
+    "weekday-baseline-forecast",
+    "csv-export-import",
+    "pwa-installable",
+    "screen-wake-lock",
+    "completion-notifications"
+  ],
+  "agent_instructions": "Open the URL. Click Start to begin a Pomodoro focus block; it auto-logs to today's tally on completion. Use the category dropdown to tag the session. Use Export CSV to grab data as date,minutes,category rows. The deeper TimesFM forecast lives in the parent Python project, not this static page.",
+  "llms_txt": "https://sachinai1981-web.github.io/focus-forecast/llms.txt"
+}

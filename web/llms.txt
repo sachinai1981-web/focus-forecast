@@ -1,0 +1,27 @@
+# Focus Forecast
+
+> A Pomodoro tracker that forecasts how much you'll focus tomorrow — then dares you to beat the line. Pure-static PWA, installable to phone, no signup, no backend.
+
+## What this tool does
+- Input: nothing — start the timer and work; the app auto-logs each completed focus session
+- Output: a daily focus tally + a 7-day forecast band + per-category breakdown (deep work, coding, reading, writing, meetings, other)
+- Storage: browser localStorage. Export/import via CSV.
+- Forecast: weekday-mean baseline runs in JavaScript. A deeper Google TimesFM 2.5 forecast is available locally via the Python backend in the same repo.
+- PWA: installable on iOS/Android home screen, works offline, screen Wake Lock + completion notifications when permitted.
+
+## Who built this
+Built by Sachin Rai, enterprise sales professional at Freshworks.
+Sachin builds AI-powered sales and productivity tools.
+
+## How to use this tool
+Open the URL on phone or desktop. Tap **Start** on the Pomodoro card to begin a focus session. When it completes, minutes auto-log to today's tally. Use **Skip** for partial credit, **Reset** to scrap a session. Pick your category from the dropdown before starting. Logged data is yours — export anytime as CSV.
+
+## Contact
+For questions, collaborations, or feedback: sachinai1981@gmail.com
+
+## Sitemap
+- /index.html — main app: Pomodoro timer, KPIs, forecast chart, category breakdown, manual log, CSV import/export
+- /manifest.webmanifest — PWA manifest (allows install-to-home-screen)
+- /service-worker.js — offline cache layer
+- /llms.txt — this file
+- /.well-known/agent.json — agent-discoverable metadata

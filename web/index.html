@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Focus, measured with meaning — Focus Forecast</title>
+<meta name="description" content="A focus tracker with a real Pomodoro clock. Log your minutes, see tomorrow's forecast, beat the line." />
+<meta name="theme-color" content="#332B24" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Focus" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" type="image/png" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="stripes" aria-hidden="true"></div>
+
+<main class="wrap">
+  <header class="masthead">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 40 40" aria-hidden="true">
+        <rect x="6" y="6" width="6" height="28" fill="currentColor"/>
+        <rect x="17" y="6" width="6" height="28" fill="currentColor"/>
+        <rect x="28" y="6" width="6" height="28" fill="currentColor"/>
+        <rect x="3" y="32" width="34" height="3" fill="currentColor"/>
+      </svg>
+      <span class="wordmark">FOCUS · FORECAST</span>
+    </div>
+    <div class="status-pills">
+      <span class="pill" id="modePill">loading</span>
+    </div>
+  </header>
+
+  <section class="hero">
+    <p class="eyebrow">① The Pomodoro</p>
+    <h1>Focus, <em>measured with meaning</em>.</h1>
+    <p class="lede">Hit start. Work the block. Log the time. Tomorrow's forecast updates with each session you complete — and today's number becomes the line you'll try to clear.</p>
+  </section>
+
+  <section class="card timer-card" aria-label="Pomodoro timer">
+    <div class="timer-grid">
+      <div class="meta">
+        <div class="label">Pomodoro</div>
+        <div class="phase focus" id="tPhase">Focus</div>
+        <div class="session" id="tSession">Session 1 · ready when you are</div>
+        <div class="category-row">
+          <label class="label" for="tCategory">Category</label>
+          <select id="tCategory" class="select">
+            <option value="deep">Deep work</option>
+            <option value="coding">Coding</option>
+            <option value="reading">Reading</option>
+            <option value="writing">Writing</option>
+            <option value="meetings">Meetings</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="ring" id="tRing">
+        <svg viewBox="0 0 200 200">
+          <circle class="track" cx="100" cy="100" r="92" />
+          <circle class="progress" id="tArc" cx="100" cy="100" r="92"
+                  stroke-dasharray="578.05" stroke-dashoffset="0" />
+        </svg>
+        <div class="display"><div class="time" id="tTime">25:00</div><div class="sub" id="tSub">tap start</div></div>
+      </div>
+
+      <div class="controls">
+        <div class="today-tally">Today logged<b id="tToday">0 min</b></div>
+        <div class="btn-row">
+          <button class="btn primary" id="tStart" type="button">Start</button>
+          <button class="btn" id="tSkip" type="button">Skip</button>
+          <button class="btn ghost" id="tReset" type="button">Reset</button>
+        </div>
+        <div class="settings-row">
+          <label>focus<input id="tFocusMin" type="number" min="1" max="120" value="25" /></label>
+          <label>break<input id="tBreakMin" type="number" min="1" max="60" value="5" /></label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="kpi-grid">
+    <p class="eyebrow span-all">② Tomorrow, forecast</p>
+    <div class="card kpi"><div class="label">Today · forecast</div><div class="value" id="kpiToday">—<span class="unit">min</span></div><div class="foot" id="kpiTodayDate">—</div></div>
+    <div class="card kpi"><div class="label">7-day total · forecast</div><div class="value" id="kpiTotal">—<span class="unit">min</span></div><div class="foot">~<span id="kpiTotalHours">—</span> hours</div></div>
+    <div class="card kpi"><div class="label">Trailing 7-day actual</div><div class="value" id="kpiPrior">—<span class="unit">min</span></div><div class="foot" id="kpiPriorDelta">—</div></div>
+  </section>
+
+  <section class="card chart-card">
+    <p class="eyebrow inset">③ The line to clear</p>
+    <div id="chartBox"><canvas id="chart"></canvas></div>
+  </section>
+
+  <section class="card categories-card">
+    <p class="eyebrow inset">④ Where the focus went</p>
+    <div id="catBreakdown" class="cat-grid"></div>
+  </section>
+
+  <section class="card log-card">
+    <div class="log-grid">
+      <div>
+        <p class="eyebrow inset">⑤ Backfill</p>
+        <h3>Log a missed day</h3>
+        <p class="muted">Forgot to use the timer? Type the total minutes and the day. Overwrites that date's value.</p>
+      </div>
+      <div>
+        <label class="label" for="logMinutes">Minutes</label><br/>
+        <input id="logMinutes" type="number" min="0" max="600" step="1" placeholder="0" class="input" />
+      </div>
+      <div>
+        <label class="label" for="logDate">Date</label><br/>
+        <input id="logDate" type="date" class="input" />
+      </div>
+      <div>
+        <button class="btn primary" id="logSaveBtn" type="button">Save</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card data-card">
+    <div class="data-grid">
+      <div>
+        <p class="eyebrow inset">⑥ Your data</p>
+        <p class="muted">Everything is in your browser. Export when you want a backup or to feed the deep-mode TimesFM forecast on your laptop.</p>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="exportBtn" type="button">Export CSV</button>
+        <label class="btn" for="importInput">Import CSV<input id="importInput" type="file" accept=".csv" hidden /></label>
+        <button class="btn ghost" id="clearBtn" type="button">Clear all</button>
+      </div>
+    </div>
+  </section>
+
+  <footer class="copperline">
+    <div>Focus Forecast · open-source · <a href="https://github.com/sachinai1981-web/focus-forecast">github</a></div>
+    <div>Brand system: <em>Verretta</em> · model: <code>google/timesfm-2.5-200m-pytorch</code> (deep mode, local)</div>
+  </footer>
+</main>
+
+<script src="app.js" defer></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('service-worker.js').catch(() => {}));
+  }
+</script>
+</body>
+</html>
