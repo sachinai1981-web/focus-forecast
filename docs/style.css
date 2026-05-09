@@ -439,6 +439,145 @@ h1 em, h2 em {
 .err { color: #B73E2A; padding: 1rem; }
 [hidden] { display: none !important; }
 
+/* ════════════════════════════════════════════════════════════
+   ANIMATIONS — Verretta voice: considered, restrained, premium.
+   ════════════════════════════════════════════════════════════ */
+
+/* Card entrance stagger — runs once on first paint */
+@keyframes card-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.card { animation: card-rise 0.55s cubic-bezier(0.2, 0.9, 0.3, 1) backwards; }
+.timer-card                         { animation-delay: 0.05s; }
+.kpi-grid    > .card:nth-of-type(1) { animation-delay: 0.10s; }
+.kpi-grid    > .card:nth-of-type(2) { animation-delay: 0.16s; }
+.kpi-grid    > .card:nth-of-type(3) { animation-delay: 0.22s; }
+.streak-grid > .card:nth-of-type(1) { animation-delay: 0.28s; }
+.streak-grid > .card:nth-of-type(2) { animation-delay: 0.34s; }
+.streak-grid > .card:nth-of-type(3) { animation-delay: 0.40s; }
+.chart-card                         { animation-delay: 0.46s; }
+.categories-card                    { animation-delay: 0.52s; }
+.log-card                           { animation-delay: 0.58s; }
+.data-card                          { animation-delay: 0.64s; }
+
+/* Hover lift — subtle, only on data cards (not chart/timer which already have presence) */
+.card { transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1), box-shadow 0.22s; }
+.kpi-grid .card:hover, .streak-grid .card:hover, .pb-card:hover, .goal-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 1px 0 rgba(20,22,40,.05), 0 28px 60px -22px rgba(51,43,36,.42);
+}
+
+/* Goal-met copper burst — particles + card pulse */
+.particles {
+  position: absolute; left: 50%; top: 50%;
+  width: 0; height: 0; pointer-events: none; z-index: 5;
+}
+.particles span {
+  position: absolute; left: -3px; top: -3px;
+  width: 6px; height: 6px;
+  background: var(--coral);
+  border-radius: 99px;
+  animation: particle-fly 1.2s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+@keyframes particle-fly {
+  0%   { transform: rotate(var(--angle)) translateY(0) scale(1);                       opacity: 0; }
+  10%  { opacity: 1; }
+  100% { transform: rotate(var(--angle)) translateY(calc(-1 * var(--dist))) scale(0.4); opacity: 0; }
+}
+.card.burst { animation: card-pulse 0.7s ease-out; }
+@keyframes card-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(255,128,93,0.55); }
+  60%  { box-shadow: 0 0 0 18px rgba(255,128,93,0.04); }
+  100% { box-shadow: var(--shadow); }
+}
+.goal-bar.met > span {
+  background: var(--copper);
+  background-size: 220% 220%;
+  animation: foil-shift 8s ease infinite;
+}
+
+/* Ring color crossfade on phase change — supplements existing transition */
+.ring .progress { transition: stroke-dashoffset 1s linear, stroke 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* Pomodoro completion flash — temporary class set by JS in complete() */
+.ring.flash .progress {
+  animation: ring-flash 0.9s cubic-bezier(0.4, 0, 0.2, 1);
+  filter: drop-shadow(0 0 14px rgba(255,128,93,0.55));
+}
+@keyframes ring-flash {
+  0%   { stroke: var(--coral); }
+  35%  { stroke: #FFE4D6; filter: drop-shadow(0 0 22px rgba(255,228,214,0.8)); }
+  100% { stroke: var(--coral); filter: none; }
+}
+
+/* Streak number flip on increment */
+.streak-value.flip { animation: streak-flip 0.65s cubic-bezier(0.45, 0.05, 0.2, 1); transform-style: preserve-3d; }
+@keyframes streak-flip {
+  0%   { transform: rotateX(0); }
+  50%  { transform: rotateX(90deg); }
+  100% { transform: rotateX(0); }
+}
+
+/* Live header refined easing — soft overshoot */
+.live-header { transition: transform 0.42s cubic-bezier(0.2, 1.05, 0.32, 1); }
+
+/* Onboarding swipe — cards crossfade with horizontal slide */
+.ob-steps { position: relative; min-height: 200px; }
+.ob-step {
+  position: absolute; inset: 0;
+  opacity: 0; transform: translateX(28px);
+  transition: opacity 0.32s cubic-bezier(0.2, 0.9, 0.3, 1), transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1);
+  pointer-events: none;
+}
+.ob-step.active {
+  opacity: 1; transform: translateX(0);
+  pointer-events: auto;
+  position: relative; /* takes up layout space */
+}
+.ob-step.exit-left { transform: translateX(-28px); opacity: 0; }
+
+/* Pull-to-refresh indicator (mobile only) */
+.ptr-indicator {
+  position: fixed; left: 50%; top: 0;
+  width: 38px; height: 38px;
+  margin-left: -19px;
+  background: var(--coral);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--taupe);
+  opacity: 0;
+  transform: translateY(-60px) scale(0.6);
+  transition: opacity 0.2s, transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1);
+  z-index: 80;
+  pointer-events: none;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+}
+.ptr-indicator svg { width: 20px; height: 20px; }
+.ptr-indicator.refreshing { animation: ptr-spin 0.7s linear infinite; opacity: 1; }
+@keyframes ptr-spin {
+  from { transform: translateY(64px) rotate(0deg); }
+  to   { transform: translateY(64px) rotate(360deg); }
+}
+
+/* Scroll-snap on mobile (proximity = soft, doesn't fight free scrolling) */
+@media (max-width: 760px) and (pointer: coarse) {
+  html { scroll-snap-type: y proximity; scroll-padding-top: 68px; }
+  .timer-card, .chart-card, .streak-grid, .kpi-grid, .categories-card { scroll-snap-align: start; scroll-snap-stop: normal; }
+}
+
+/* Skeleton state — body gets .booting until first paint completes */
+body.booting .card .value,
+body.booting .streak-value,
+body.booting .pb-card .pb-row b {
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--rule) 50%, var(--surface-2) 100%);
+  background-size: 220% 100%;
+  animation: skeleton 1.4s ease infinite;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+}
+@keyframes skeleton { 0% { background-position: 200% 0; } 100% { background-position: -100% 0; } }
+
 /* ── Reduced motion ──────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }

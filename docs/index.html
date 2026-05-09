@@ -49,8 +49,16 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
 <link rel="stylesheet" href="style.css" />
 </head>
-<body>
+<body class="booting">
 <div class="stripes" aria-hidden="true"></div>
+
+<!-- Pull-to-refresh indicator (mobile only) -->
+<div class="ptr-indicator" id="ptrIndicator" aria-hidden="true">
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M3 12a9 9 0 1 0 4-7.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M3 4v5h5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+</div>
 
 <!-- Sticky live header — shows only when the focus timer is running -->
 <div class="live-header" id="liveHeader" aria-hidden="true">
@@ -220,20 +228,22 @@
 <!-- Onboarding overlay — first launch only -->
 <div class="onboarding" id="onboarding" aria-hidden="true">
   <div class="ob-card" role="dialog" aria-labelledby="obTitle">
-    <div class="ob-step" data-step="1">
-      <p class="eyebrow">① Pick your category</p>
-      <h2 id="obTitle">Tag what you're <em>focused on</em>.</h2>
-      <p>Deep work, coding, reading, writing, meetings — six buckets. Each Pomodoro logs to the one you pick.</p>
-    </div>
-    <div class="ob-step" data-step="2" hidden>
-      <p class="eyebrow">② Hit start</p>
-      <h2>The timer is the <em>real clock</em>.</h2>
-      <p>25 minutes by default. Configurable. The countdown counts in wall-clock time, so it stays honest if you switch tabs or your phone screens off.</p>
-    </div>
-    <div class="ob-step" data-step="3" hidden>
-      <p class="eyebrow">③ Beat tomorrow's line</p>
-      <h2>Today's forecast is your <em>baseline</em>.</h2>
-      <p>Once we have a few weeks of your data, the model picks up your weekly rhythm and forecasts how much you'll focus tomorrow. Your job: clear the line.</p>
+    <div class="ob-steps">
+      <div class="ob-step active" data-step="1">
+        <p class="eyebrow">① Pick your category</p>
+        <h2 id="obTitle">Tag what you're <em>focused on</em>.</h2>
+        <p>Deep work, coding, reading, writing, meetings — six buckets. Each Pomodoro logs to the one you pick.</p>
+      </div>
+      <div class="ob-step" data-step="2">
+        <p class="eyebrow">② Hit start</p>
+        <h2>The timer is the <em>real clock</em>.</h2>
+        <p>25 minutes by default. Configurable. The countdown counts in wall-clock time, so it stays honest if you switch tabs or your phone screens off.</p>
+      </div>
+      <div class="ob-step" data-step="3">
+        <p class="eyebrow">③ Beat tomorrow's line</p>
+        <h2>Today's forecast is your <em>baseline</em>.</h2>
+        <p>Once we have a few weeks of your data, the model picks up your weekly rhythm and forecasts how much you'll focus tomorrow. Your job: clear the line.</p>
+      </div>
     </div>
     <div class="ob-dots"><span class="dot active"></span><span class="dot"></span><span class="dot"></span></div>
     <div class="ob-actions">
